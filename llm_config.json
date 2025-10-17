@@ -1,0 +1,24 @@
+{
+  "llm_config": {
+    "api_type": "openai",
+    "api_key": "your_openai_api_key_here",
+    "model": "gpt-3.5-turbo",
+    "base_url": "https://api.openai.com/v1",
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "random_seed": 42,
+  "data_quality_threshold": 0.5,
+  "max_samples_per_batch": 20,
+  "enable_intelligent_processing": true,
+  "fallback_mode": true,
+  "_comments": {
+    "api_type": "支持的类型: openai, claude",
+    "model_options": {
+      "openai": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
+      "claude": ["claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-opus-20240229"]
+    },
+    "usage": "将此文件重命名为 llm_config.json 并填入您的API密钥",
+    "security": "请勿将包含真实API密钥的配置文件提交到版本控制系统"
+  }
+}

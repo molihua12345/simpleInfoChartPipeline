@@ -1,0 +1,9 @@
+{
+  "evaluator_type": "gpt4v",
+  "api_key": "your-api-key-here",
+  "model": "gpt-4-vision-preview",
+  "max_tokens": 1500,
+  "temperature": 0.1,
+  "retry_attempts": 3,
+  "retry_delay": 5
+}

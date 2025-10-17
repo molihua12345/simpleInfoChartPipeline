@@ -1,0 +1,12 @@
+{
+  "generator_type": "dalle",
+  "api_key": "your-api-key-here",
+  "model": "dall-e-3",
+  "image_size": "1024x1024",
+  "image_quality": "standard",
+  "retry_attempts": 3,
+  "retry_delay": 10,
+  "batch_delay": 5,
+  "output_directory": "generated_images",
+  "save_prompts": true
+}
