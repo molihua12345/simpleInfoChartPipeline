@@ -63,94 +63,62 @@ class AIEvaluator:
     
     def _create_evaluation_prompt_template(self) -> str:
         """创建评估提示词模板"""
-        return """
-你是一个专业的信息图设计评估专家。请根据以下三个维度对这张信息图进行详细评估：
-
-**评估维度：**
-
-1. **数据一致性 (Data Consistency)** - 满分10分
-   - 数值准确性：图表中显示的数值与原始数据是否完全匹配
-   - 类别标签：类别名称是否正确显示且清晰可读
-   - 比例关系：视觉元素（如条形高度、饼图扇形角度）是否与数据成比例
-   - 数据完整性：是否包含了所有应该显示的数据点
-
-2. **布局准确性 (Layout Accuracy)** - 满分10分
-   - 元素位置：标题、图表、文本等元素是否按照布局模板正确放置
-   - 空间分配：各元素占用的空间比例是否合理
-   - 对齐方式：元素的对齐方式是否符合布局要求
-   - 层次结构：视觉层次是否清晰，重要元素是否突出
-
-3. **美观度 (Aesthetic Quality)** - 满分10分
-   - 色彩搭配：颜色选择是否和谐，对比度是否适当
-   - 字体排版：字体选择和排版是否专业、易读
-   - 视觉平衡：整体构图是否平衡，视觉重心是否合适
-   - 设计一致性：整体设计风格是否统一，是否符合专业信息图标准
-
-**原始数据信息：**
-{data_info}
-
-**图表类型要求：**
-{chart_type}
-
-**布局模板要求：**
-{layout_template}
-
-**评估要求：**
-1. 仔细观察图像中的每个元素
-2. 对照原始数据验证数据准确性
-3. 检查布局是否符合指定模板要求
-4. 评估整体视觉设计质量
-5. 为每个维度给出0-10分的具体分数
-6. 为每个子标准提供详细的评分理由
-7. 给出改进建议
-
-请按照以下JSON格式返回评估结果：
-
-```json
-{
-  "data_consistency": {
-    "total_score": 0,
-    "sub_scores": {
-      "数值准确性": 0,
-      "类别标签": 0,
-      "比例关系": 0,
-      "数据完整性": 0
-    },
-    "feedback": "详细反馈..."
-  },
-  "layout_accuracy": {
-    "total_score": 0,
-    "sub_scores": {
-      "元素位置": 0,
-      "空间分配": 0,
-      "对齐方式": 0,
-      "层次结构": 0
-    },
-    "feedback": "详细反馈..."
-  },
-  "aesthetic_quality": {
-    "total_score": 0,
-    "sub_scores": {
-      "色彩搭配": 0,
-      "字体排版": 0,
-      "视觉平衡": 0,
-      "设计一致性": 0
-    },
-    "feedback": "详细反馈..."
-  },
-  "overall_score": 0,
-  "overall_feedback": "整体评价和改进建议...",
-  "strengths": ["优点1", "优点2"],
-  "weaknesses": ["不足1", "不足2"],
-  "improvement_suggestions": ["建议1", "建议2"]
-}
-```
-"""
+        template_file = os.path.join(os.path.dirname(__file__), "evaluation_prompt_template.txt")
+        try:
+            with open(template_file, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            print(f"警告：找不到提示词模板文件 {template_file}，使用默认模板")
+            # 如果文件不存在，返回一个简化的默认模板
+            raise FileNotFoundError(f"评估提示词模板文件 {template_file} 不存在")
     
     def encode_image_to_base64(self, image_path: str) -> str:
-        """将图像编码为base64"""
+        """将图像编码为base64字符串"""
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
+    
+    def _extract_json_from_response(self, content: str) -> Optional[Dict[str, Any]]:
+        """从AI响应中提取JSON内容"""
+        import re
+        
+        # 方法1: 尝试提取markdown代码块中的JSON
+        json_pattern = r'```(?:json)?\s*({[^`]+})\s*```'
+        match = re.search(json_pattern, content, re.DOTALL | re.IGNORECASE)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # 方法2: 查找完整的JSON对象
+        brace_count = 0
+        start_idx = -1
+        
+        for i, char in enumerate(content):
+            if char == '{':
+                if brace_count == 0:
+                    start_idx = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_idx != -1:
+                    try:
+                        json_content = content[start_idx:i+1]
+                        return json.loads(json_content)
+                    except json.JSONDecodeError:
+                        continue
+        
+        # 方法3: 简单的首尾查找（原始方法的备用）
+        json_start = content.find('{')
+        json_end = content.rfind('}') + 1
+        if json_start != -1 and json_end != -1:
+            try:
+                json_content = content[json_start:json_end]
+                return json.loads(json_content)
+            except json.JSONDecodeError:
+                pass
+        
+        return None
     
     def evaluate_single_image(self, 
                             image_path: str, 
@@ -167,10 +135,12 @@ class AIEvaluator:
         layout_template = experiment_data.get('layout_template', '未知布局模板')
         
         # 构建评估提示词
-        evaluation_prompt = self.evaluation_prompt_template.format(
-            data_info=data_info,
-            chart_type=chart_type,
-            layout_template=layout_template
+        evaluation_prompt = self.evaluation_prompt_template.replace(
+            '{data_info}', str(data_info)
+        ).replace(
+            '{chart_type}', str(chart_type)
+        ).replace(
+            '{layout_template}', str(layout_template)
         )
         
         for attempt in range(self.config.retry_attempts):
@@ -213,12 +183,12 @@ class AIEvaluator:
         if OpenAI is None:
             print("openai库未安装，无法调用GPT-4V API")
             return None
-            
+        #print(f"调用GPT-4V API")
         try:
             base64_image = self.encode_image_to_base64(image_path)
             
             # 创建OpenAI客户端
-            client = OpenAI(api_key=self.config.api_key)
+            client = OpenAI(api_key=self.config.api_key, base_url="https://aihubmix.com/v1")
             
             # 调用API
             response = client.chat.completions.create(
@@ -234,29 +204,26 @@ class AIEvaluator:
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                    "url": f"data:image/png;base64,{base64_image}"
                                 }
                             }
                         ]
                     }
                 ],
-                max_tokens=self.config.max_tokens,
+                max_completion_tokens=self.config.max_tokens,
                 temperature=self.config.temperature
             )
             
             content = response.choices[0].message.content
-            
+            #print(f"原始内容: {content}")
             # 尝试解析JSON结果
             try:
-                # 提取JSON部分
-                json_start = content.find('{')
-                json_end = content.rfind('}') + 1
-                if json_start != -1 and json_end != -1:
-                    json_content = content[json_start:json_end]
-                    evaluation_result = json.loads(json_content)
+                # 提取JSON部分 - 改进的解析逻辑
+                evaluation_result = self._extract_json_from_response(content)
+                if evaluation_result:
                     return evaluation_result
-            except json.JSONDecodeError:
-                print("无法解析GPT-4V返回的JSON结果")
+            except Exception as e:
+                print(f"无法解析GPT-4V返回的JSON结果: {e}")
                 print(f"原始内容: {content}")
                 
         except Exception as e:
@@ -305,14 +272,12 @@ class AIEvaluator:
             
             # 尝试解析JSON结果
             try:
-                json_start = content.find('{')
-                json_end = content.rfind('}') + 1
-                if json_start != -1 and json_end != -1:
-                    json_content = content[json_start:json_end]
-                    evaluation_result = json.loads(json_content)
+                # 提取JSON部分 - 改进的解析逻辑
+                evaluation_result = self._extract_json_from_response(content)
+                if evaluation_result:
                     return evaluation_result
-            except json.JSONDecodeError:
-                print("无法解析Claude Vision返回的JSON结果")
+            except Exception as e:
+                print(f"无法解析Claude Vision返回的JSON结果: {e}")
                 print(f"原始内容: {content}")
                 
         except Exception as e:
@@ -589,6 +554,7 @@ def main():
         print("\nAI自动评估完成!")
         
     except Exception as e:
+        print(e)
         print(f"AI评估过程中发生错误: {e}")
 
 if __name__ == "__main__":

@@ -122,16 +122,30 @@ class DataPreprocessor:
             val_col = data.columns[1]
             
             for _, row in data.iterrows():
+                try:
+                    # 尝试转换为数值，如果失败则使用0
+                    value = float(row[val_col]) if pd.notna(row[val_col]) else 0
+                except (ValueError, TypeError):
+                    # 对于无法转换的字符串（如'Chrome 74.0'），使用0作为默认值
+                    value = 0
+                
                 result.append({
                     'category': str(row[cat_col]),
-                    'value': float(row[val_col]) if pd.notna(row[val_col]) else 0
+                    'value': value
                 })
         else:
             # 单列数据处理
             for i, (_, row) in enumerate(data.iterrows()):
+                try:
+                    # 尝试转换为数值，如果失败则使用0
+                    value = float(row.iloc[0]) if pd.notna(row.iloc[0]) else 0
+                except (ValueError, TypeError):
+                    # 对于无法转换的字符串，使用0作为默认值
+                    value = 0
+                
                 result.append({
                     'category': f'Item {i+1}',
-                    'value': float(row.iloc[0]) if pd.notna(row.iloc[0]) else 0
+                    'value': value
                 })
         
         return result[:max_points]

@@ -1,9 +1,9 @@
 {
   "llm_config": {
     "api_type": "openai",
-    "api_key": "your_openai_api_key_here",
+    "api_key": "sk-HGwzhul85auxqDzz6eF39b9eD47347F7A454Ad9e8f1f380d",
     "model": "gpt-3.5-turbo",
-    "base_url": "https://api.openai.com/v1",
+    "base_url": "https://aihubmix.com/v1",
     "timeout": 30,
     "max_retries": 3
   },

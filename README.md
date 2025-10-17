@@ -67,9 +67,9 @@ simplePipeline/
    ```json
    {
      "api_type": "openai",
-     "api_key": "your-actual-api-key",
+     "api_key": "sk-xxx",
      "model": "gpt-3.5-turbo",
-     "base_url": "https://api.openai.com/v1",
+     "base_url":"https://aihubmix.com/v1",
      "timeout": 30,
      "max_retries": 3,
      "enable_intelligent_processing": true,

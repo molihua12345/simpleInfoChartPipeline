@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 # 导入自定义模块
-from data_preprocessor import MatPlotBenchProcessor
+from data_preprocessor import DataPreprocessor
 from experiment_matrix import ExperimentMatrix
 from prompt_generator import PromptGenerator
 from evaluation_framework import EvaluationFramework
@@ -79,7 +79,7 @@ class ExperimentRunner:
         
         try:
             # 初始化数据处理器（传入配置）
-            self.data_processor = MatPlotBenchProcessor(
+            self.data_processor = DataPreprocessor(
                 str(self.benchmark_data_dir),
                 self.config
             )
@@ -114,7 +114,9 @@ class ExperimentRunner:
     def start_experiment(self, experiment_name: str = None) -> str:
         """开始实验"""
         self.start_time = datetime.now()
-        self.experiment_id = experiment_name or f"exp_{self.start_time.strftime('%Y%m%d_%H%M%S')}"
+        # Format time string outside f-string to avoid backslash issue
+        time_str = self.start_time.strftime('%Y%m%d_%H%M%S')
+        self.experiment_id = experiment_name or f"exp_{time_str}"
         
         self.log(f"开始实验: {self.experiment_id}")
         self.log(f"实验开始时间: {self.start_time}")
@@ -128,31 +130,24 @@ class ExperimentRunner:
         self.log("=" * 50)
         
         try:
-            # 加载MatPlotBench数据
-            self.log("正在加载MatPlotBench数据...")
-            data_samples = self.data_processor.load_matplotbench_data()
-            self.log(f"成功加载 {len(data_samples)} 个数据样本")
+            # 生成实验数据样本
+            self.log("正在生成实验数据样本...")
+            sample_files = self.data_processor.generate_experiment_samples()
+            self.log(f"成功生成 {len(sample_files)} 个数据样本")
             
-            # 选择前3个样本进行实验
-            selected_samples = data_samples[:3]
-            self.log(f"选择前3个样本进行实验: {[s['id'] for s in selected_samples]}")
-            
-            # 处理每个样本
+            # 加载生成的样本文件
             processed_samples = []
-            for i, sample in enumerate(selected_samples, 1):
-                self.log(f"正在处理样本 {i}/3: ID {sample['id']}")
+            for i, sample_file in enumerate(sample_files, 1):
+                self.log(f"正在加载样本文件 {i}/3: {sample_file}")
                 
                 try:
-                    processed_sample = self.data_processor.process_sample(
-                        sample['id'], 
-                        sample['instruction'], 
-                        sample['data']
-                    )
-                    processed_samples.append(processed_sample)
-                    self.log(f"样本 {sample['id']} 处理完成")
+                    with open(sample_file, 'r', encoding='utf-8') as f:
+                        sample_data = json.load(f)
+                    processed_samples.append(sample_data)
+                    self.log(f"样本文件 {sample_file} 加载完成")
                     
                 except Exception as e:
-                    self.log(f"处理样本 {sample['id']} 时出错: {e}", "ERROR")
+                    self.log(f"加载样本文件 {sample_file} 时出错: {e}", "ERROR")
                     continue
             
             # 保存处理后的数据
@@ -177,7 +172,7 @@ class ExperimentRunner:
         
         try:
             # 生成实验矩阵
-            matrix_df = self.experiment_matrix.generate_full_matrix()
+            matrix_df = self.experiment_matrix.generate_matrix()
             self.log(f"生成实验矩阵，共 {len(matrix_df)} 个实验条件")
             
             # 保存实验矩阵
@@ -204,6 +199,12 @@ class ExperimentRunner:
         self.log("步骤3: 生成提示词")
         self.log("=" * 50)
         
+        # 检查提示词文件是否已存在
+        prompts_file = self.prompts_dir / "all_prompts.json"
+        if prompts_file.exists():
+            self.log(f"提示词文件已存在，跳过生成步骤: {prompts_file}")
+            return True
+        
         try:
             # 加载处理后的数据
             processed_data_file = self.processed_data_dir / "processed_samples.json"
@@ -217,28 +218,23 @@ class ExperimentRunner:
             # 生成所有提示词
             self.log("正在生成提示词...")
             all_prompts = self.prompt_generator.generate_all_prompts(
-                processed_samples, 
-                matrix_df
+                matrix_file=str(matrix_file),
+                data_dir=str(self.processed_data_dir)
             )
             
             # 保存提示词
             prompts_file = self.prompts_dir / "all_prompts.json"
-            self.prompt_generator.save_prompts(all_prompts, str(prompts_file))
+            text_file, json_file = self.prompt_generator.save_prompts(
+                all_prompts, 
+                output_file=str(self.prompts_dir / "prompts.txt"),
+                json_output=str(prompts_file)
+            )
             
             self.log(f"成功生成 {len(all_prompts)} 个提示词")
             self.log(f"提示词已保存到: {prompts_file}")
             
             # 生成提示词摘要
-            summary = self.prompt_generator.print_generation_summary(
-                all_prompts, processed_samples, matrix_df
-            )
-            
-            # 保存摘要
-            summary_file = self.prompts_dir / "generation_summary.txt"
-            with open(summary_file, 'w', encoding='utf-8') as f:
-                f.write(summary)
-            
-            self.log(f"提示词生成摘要已保存到: {summary_file}")
+            self.prompt_generator.print_generation_summary(all_prompts)
             
             return True
             
@@ -277,7 +273,7 @@ class ExperimentRunner:
         
         try:
             # 创建AI图像生成器
-            generator = create_generator_from_config()
+            generator = create_generator_from_config("ai_image_generator_config.json")
             
             # 检查API密钥配置
             if generator.config.api_key == "your-api-key-here":
@@ -293,10 +289,10 @@ class ExperimentRunner:
             generation_data = []
             for prompt_data in all_prompts:
                 generation_data.append({
-                    'experiment_id': prompt_data['experiment_id'],
+                    'experiment_id': prompt_data['run_id'],
                     'prompt': prompt_data['prompt'],
                     'chart_type': prompt_data.get('chart_type', ''),
-                    'layout_template': prompt_data.get('layout_template', '')
+                    'layout_template': prompt_data.get('layout_template_id', '')
                 })
             
             # 批量生成图像
@@ -392,100 +388,15 @@ class ExperimentRunner:
         except:
             pass
         
-        report_content = f"""
-# ChartGalaxy端到端AI自动化信息图生成实验报告
-
-## 🎯 实验基本信息
-
-- **实验ID**: {self.experiment_id}
-- **实验类型**: 端到端AI自动化数据驱动信息图生成
-- **开始时间**: {self.start_time.strftime('%Y-%m-%d %H:%M:%S') if self.start_time else '未知'}
-- **结束时间**: {end_time.strftime('%Y-%m-%d %H:%M:%S')}
-- **实验耗时**: {str(duration)}
-- **实验目标**: 验证ChartGalaxy方法论的端到端自动化能力
-
-## 🔄 自动化流程状态
-
-- **数据预处理**: ✅ 自动化完成
-- **实验设计**: ✅ 自动化完成
-- **提示词生成**: ✅ 自动化完成
-- **图像生成**: {'✅ AI自动化' if generation_results.get('status') != 'skipped' else '⏭️ 已跳过'}
-- **质量评估**: {'✅ AI自动化' if evaluation_results.get('status') != 'skipped' else '⏭️ 已跳过'}
-
-## 📊 实验设计
-
-### 数据来源
-- **数据集**: MatPlotBench
-- **数据目录**: {self.benchmark_data_dir}
-- **选择样本**: 前3个数据样本
-
-### 实验矩阵
-- **实验设计**: 3×3×3 全因子设计
-- **因子1**: 数据样本 (3个)
-- **因子2**: 图表类型 (3种)
-  - Vertical Bar Chart (垂直条形图)
-  - Pie Chart (饼图)
-  - Line Graph (折线图)
-- **因子3**: 布局模板 (3种)
-  - LT-01: Classic Centered Layout (经典居中布局)
-  - LT-08: Asymmetric Split Layout (非对称分割布局)
-  - LT-25: Immersive Overlay Layout (沉浸式叠加布局)
-- **总实验条件**: 27个
-
-## 🎨 AI图像生成结果
-
-- **状态**: {generation_results.get('status', '未执行')}
-- **总尝试数**: {generation_results.get('total_prompts', 0)}
-- **成功生成**: {generation_results.get('successful_generations', 0)}
-- **失败生成**: {generation_results.get('failed_generations', 0)}
-- **成功率**: {generation_results.get('successful_generations', 0) / max(generation_results.get('total_prompts', 1), 1) * 100:.1f}%
-
-## 🔍 AI自动评估结果
-
-- **状态**: {evaluation_results.get('status', '未执行')}
-- **总评估数**: {evaluation_results.get('total_images', 0)}
-- **成功评估**: {evaluation_results.get('successful_evaluations', 0)}
-- **失败评估**: {evaluation_results.get('failed_evaluations', 0)}
-- **成功率**: {evaluation_results.get('successful_evaluations', 0) / max(evaluation_results.get('total_images', 1), 1) * 100:.1f}%
-
-## 📈 性能指标
-
-{self._generate_performance_metrics(evaluation_results)}
-
-## 实验输出文件
-
-### 数据处理
-- `{self.processed_data_dir / 'processed_samples.json'}`: 预处理后的数据样本
-
-### 实验设计
-- `{self.output_dir / 'experimental_matrix.csv'}`: 完整实验矩阵
-
-### 提示词生成
-- `{self.prompts_dir / 'all_prompts.json'}`: 所有实验条件的提示词
-- `{self.prompts_dir / 'generation_summary.txt'}`: 提示词生成摘要
-
-### AI生成结果
-- `generated_images/`: AI生成的信息图图像
-- `{self.output_dir / 'generation_results.json'}`: 图像生成结果统计
-
-### AI评估结果
-- `{self.evaluations_dir / 'ai_evaluation_results.json'}`: AI自动评估结果
-- `{self.evaluations_dir / 'evaluation_guide.md'}`: 评估指南文档
-
-## 🚀 下一步操作
-
-{self._generate_next_steps(generation_results, evaluation_results)}
-
-## 实验日志
-
-```
-{"".join([log + "\n" for log in self.experiment_log])}
-```
-
----
-*报告生成时间: {end_time.strftime('%Y-%m-%d %H:%M:%S')}*
-*实验框架版本: ChartGalaxy Pipeline v1.0*
-"""
+        # Format time strings outside f-string to avoid backslash issue
+        start_time_str = self.start_time.strftime('%Y-%m-%d %H:%M:%S') if self.start_time else '未知'
+        end_time_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 生成报告内容
+        report_content = self._generate_report_template(
+            start_time_str, end_time_str, duration, 
+            generation_results, evaluation_results
+        )
         
         # 保存报告
         report_file = self.reports_dir / f"{self.experiment_id}_comprehensive_report.md"
@@ -516,13 +427,13 @@ class ExperimentRunner:
         avg_aesthetic = sum(aesthetic_scores) / len(aesthetic_scores) if aesthetic_scores else 0
         
         return f"""
-- **平均总分**: {avg_total:.2f}/30 ({avg_total/30*100:.1f}%)
-- **平均数据一致性**: {avg_data:.2f}/10
-- **平均布局准确性**: {avg_layout:.2f}/10
-- **平均美观度**: {avg_aesthetic:.2f}/10
-- **最高分**: {max(total_scores) if total_scores else 0:.2f}/30
-- **最低分**: {min(total_scores) if total_scores else 0:.2f}/30
-"""
+            - **平均总分**: {avg_total:.2f}/30 ({avg_total/30*100:.1f}%)
+            - **平均数据一致性**: {avg_data:.2f}/10
+            - **平均布局准确性**: {avg_layout:.2f}/10
+            - **平均美观度**: {avg_aesthetic:.2f}/10
+            - **最高分**: {max(total_scores) if total_scores else 0:.2f}/30
+            - **最低分**: {min(total_scores) if total_scores else 0:.2f}/30
+        """
     
     def _generate_next_steps(self, generation_results: Dict[str, Any], evaluation_results: Dict[str, Any]) -> str:
         """生成下一步建议"""
@@ -658,6 +569,89 @@ class ExperimentRunner:
         except Exception as e:
             print(f"加载配置文件失败: {e}，使用默认配置")
             return default_config
+
+    def _generate_report_template(self, start_time_str: str, end_time_str: str, 
+                                duration, generation_results: Dict[str, Any], 
+                                evaluation_results: Dict[str, Any]) -> str:
+        return f"""
+            # ChartGalaxy端到端AI自动化信息图生成实验报告
+
+            ## 🎯 实验基本信息
+
+            - **实验ID**: {self.experiment_id}
+            - **实验类型**: 端到端AI自动化数据驱动信息图生成
+            - **开始时间**: {start_time_str}
+            - **结束时间**: {end_time_str}
+            - **实验耗时**: {str(duration)}
+            - **实验目标**: 验证ChartGalaxy方法论的端到端自动化能力
+
+            ## 🔄 自动化流程状态
+
+            - **数据预处理**: ✅ 自动化完成
+            - **实验设计**: ✅ 自动化完成
+            - **提示词生成**: ✅ 自动化完成
+            - **图像生成**: {'✅ AI自动化' if generation_results.get('status') != 'skipped' else '⏭️ 已跳过'}
+            - **质量评估**: {'✅ AI自动化' if evaluation_results.get('status') != 'skipped' else '⏭️ 已跳过'}
+
+            ## 📊 实验设计
+
+            ### 数据来源
+            - **数据集**: MatPlotBench
+            - **数据目录**: {self.benchmark_data_dir}
+            - **选择样本**: 前3个数据样本
+
+            ## 🎨 AI图像生成结果
+
+            - **状态**: {generation_results.get('status', '未执行')}
+            - **总尝试数**: {generation_results.get('total_prompts', 0)}
+            - **成功生成**: {generation_results.get('successful_generations', 0)}
+            - **失败生成**: {generation_results.get('failed_generations', 0)}
+            - **成功率**: {generation_results.get('successful_generations', 0) / max(generation_results.get('total_prompts', 1), 1) * 100:.1f}%
+
+            ## 🔍 AI自动评估结果
+
+            - **状态**: {evaluation_results.get('status', '未执行')}
+            - **总评估数**: {evaluation_results.get('total_images', 0)}
+            - **成功评估**: {evaluation_results.get('successful_evaluations', 0)}
+            - **失败评估**: {evaluation_results.get('failed_evaluations', 0)}
+            - **成功率**: {evaluation_results.get('successful_evaluations', 0) / max(evaluation_results.get('total_images', 1), 1) * 100:.1f}%
+
+            ## 📈 性能指标
+
+            {self._generate_performance_metrics(evaluation_results)}
+
+            ## 实验输出文件
+
+            ### 数据处理
+            - `{self.processed_data_dir / 'processed_samples.json'}`: 预处理后的数据样本
+
+            ### 实验设计
+            - `{self.output_dir / 'experimental_matrix.csv'}`: 完整实验矩阵
+
+            ### 提示词生成
+            - `{self.prompts_dir / 'all_prompts.json'}`: 所有实验条件的提示词
+            - `{self.prompts_dir / 'generation_summary.txt'}`: 提示词生成摘要
+
+            ### AI生成结果
+            - `generated_images/`: AI生成的信息图图像
+            - `{self.output_dir / 'generation_results.json'}`: 图像生成结果统计
+
+            ### AI评估结果
+            - `{self.evaluations_dir / 'ai_evaluation_results.json'}`: AI自动评估结果
+            - `{self.evaluations_dir / 'evaluation_guide.md'}`: 评估指南文档
+
+            ## 🚀 下一步操作
+
+            {self._generate_next_steps(generation_results, evaluation_results)}
+
+            ## 实验日志
+
+            {chr(96)*3}
+            {"###########next#############".join(self.experiment_log)}
+            {chr(96)*3}
+
+            ---
+            *报告生成时间: {end_time_str}*  """
 
 def main():
     """主函数"""

@@ -106,7 +106,7 @@ class AIImageGenerator:
             
         try:
             # 创建OpenAI客户端
-            client = OpenAI(api_key=self.config.api_key)
+            client = OpenAI(api_key=self.config.api_key, base_url="https://aihubmix.com/v1")
             
             # 调用图像生成API
             response = client.images.generate(
@@ -310,7 +310,7 @@ class AIImageGenerator:
         
         return formatted_prompts
 
-def create_generator_from_config(config_file: str = "ai_config.json") -> AIImageGenerator:
+def create_generator_from_config(config_file: str = "ai_image_generator_config.json") -> AIImageGenerator:
     """从配置文件创建图像生成器"""
     if Path(config_file).exists():
         with open(config_file, 'r', encoding='utf-8') as f:
