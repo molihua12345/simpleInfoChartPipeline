@@ -11,8 +11,8 @@ ChartGalaxy数据驱动信息图生成实验主脚本
 5. AI自动评估
 6. 实验报告生成
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import os
@@ -132,7 +132,7 @@ class ExperimentRunner:
         try:
             # 生成实验数据样本
             self.log("正在生成实验数据样本...")
-            sample_files = self.data_processor.generate_experiment_samples()
+            sample_files = self.data_processor.generate_experiment_samples(self.processed_data_dir)
             self.log(f"成功生成 {len(sample_files)} 个数据样本")
             
             # 加载生成的样本文件
@@ -171,6 +171,12 @@ class ExperimentRunner:
         self.log("=" * 50)
         
         try:
+            #已存在则跳过
+            matrix_file = self.output_dir / "experimental_matrix.csv"
+            if matrix_file.exists():
+                self.log(f"实验矩阵文件已存在: {matrix_file}，跳过生成")
+                return True
+
             # 生成实验矩阵
             matrix_df = self.experiment_matrix.generate_matrix()
             self.log(f"生成实验矩阵，共 {len(matrix_df)} 个实验条件")
@@ -199,26 +205,11 @@ class ExperimentRunner:
         self.log("步骤3: 生成提示词")
         self.log("=" * 50)
         
-        # 检查提示词文件是否已存在
-        prompts_file = self.prompts_dir / "all_prompts.json"
-        if prompts_file.exists():
-            self.log(f"提示词文件已存在，跳过生成步骤: {prompts_file}")
-            return True
-        
-        try:
-            # 加载处理后的数据
-            processed_data_file = self.processed_data_dir / "processed_samples.json"
-            with open(processed_data_file, 'r', encoding='utf-8') as f:
-                processed_samples = json.load(f)
-            
-            # 加载实验矩阵
-            matrix_file = self.output_dir / "experimental_matrix.csv"
-            matrix_df = pd.read_csv(matrix_file)
-            
+        try: 
             # 生成所有提示词
             self.log("正在生成提示词...")
             all_prompts = self.prompt_generator.generate_all_prompts(
-                matrix_file=str(matrix_file),
+                matrix_file=str(self.output_dir / "experimental_matrix.csv"),
                 data_dir=str(self.processed_data_dir)
             )
             
@@ -290,11 +281,11 @@ class ExperimentRunner:
             for prompt_data in all_prompts:
                 generation_data.append({
                     'experiment_id': prompt_data['run_id'],
-                    'prompt': prompt_data['prompt'],
+                    'prompt': prompt_data['prompt'] + "\n data info:\n" + json.dumps(prompt_data['data']),
                     'chart_type': prompt_data.get('chart_type', ''),
                     'layout_template': prompt_data.get('layout_template_id', '')
                 })
-            
+            print(generation_data[0])
             # 批量生成图像
             self.log(f"开始生成 {len(generation_data)} 张图像...")
             results = generator.batch_generate_images(generation_data)

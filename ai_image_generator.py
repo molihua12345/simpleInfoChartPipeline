@@ -6,8 +6,8 @@ AI驱动图像生成模块
 支持多种AI图像生成API的自动化调用，批量生成信息图。
 支持DALL-E、Midjourney、Stable Diffusion等主流AI图像生成服务。
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import os

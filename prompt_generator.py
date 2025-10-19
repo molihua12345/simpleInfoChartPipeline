@@ -6,8 +6,8 @@
 基于ChartGalaxy方法论，实现模块化提示词模板设计和动态变量注入。
 为27个实验条件生成精确的文本到图像生成指令。
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import json
@@ -84,20 +84,23 @@ Generate a clean, professional, and visually appealing infographic.
     def generate_single_prompt(self, 
                              data_sample: Dict[str, Any],
                              chart_type: str,
-                             layout_template_id: str) -> str:
+                             layout_template_id: str,
+                             layout_template_name: str,
+                             chart_description: str,
+                             layout_description: str) -> str:
         """智能生成单个实验条件的提示词"""
         
         try:
             # 如果启用智能模式，尝试使用LLM优化提示词
             if self.intelligent_mode and self.llm_config.get('api_key'):
                 enhanced_prompt = self._generate_enhanced_prompt_with_llm(
-                    data_sample, chart_type, layout_template_id
+                    data_sample, chart_type, layout_template_id, layout_template_name, chart_description, layout_description
                 )
                 if enhanced_prompt:
                     return enhanced_prompt
             
             # 备用方案：使用规则生成
-            return self._generate_rule_based_prompt(data_sample, chart_type, layout_template_id)
+            return self._generate_rule_based_prompt(data_sample, chart_type, layout_template_id, layout_template_name, chart_description, layout_description)
             
         except Exception as e:
             print(f"生成提示词时发生错误: {e}")
@@ -106,24 +109,39 @@ Generate a clean, professional, and visually appealing infographic.
     def _generate_enhanced_prompt_with_llm(self, 
                                           data_sample: Dict[str, Any], 
                                           chart_type: str, 
-                                          layout_template_id: str) -> Optional[str]:
+                                          layout_template_id: str,
+                                          layout_template_name: str,
+                                          chart_description: str,
+                                          layout_description: str) -> Optional[str]:
         """使用LLM生成增强的提示词"""
         try:
             # 构建LLM输入
-            context = self._build_llm_context(data_sample, chart_type, layout_template_id)
+            context = self._build_llm_context(data_sample, chart_type, layout_template_id, layout_template_name, chart_description, layout_description)
             
             prompt_for_llm = f"""
-            请根据以下信息生成一个专业的信息图生成提示词：
-            
+            #请根据以下信息生成一个专业的信息图生成提示词,生成的提示词将用于辅助ai生成符合要求的信息图：
+            ##上下文:
             {context}
-            
-            要求：
+            ##上下文结束
+
+            ###要求：
             1. 提示词应该清晰、具体、可执行
             2. 包含所有必要的设计元素和数据要求
             3. 符合指定的图表类型和布局要求
             4. 长度控制在200-300字之间
+            5. 提示词能够帮助ai生成符合要求的信息图
+            6. 使用英文编写
             
-            请直接返回提示词内容，不要其他解释。
+            ###生成示例:
+            Generate a professional infographic with the title "Desktop Windows Version Market Share Worldwide". The central theme is the "Market share of Windows versions", which should be visually represented using a Pie Chart. The overall layout must strictly adhere to the LT-01 (Classic Centered Layout) template. The infographic needs to clearly display data for two time points: 2015 and 2016, with a focus on the change or comparison between these two years.
+            Data Requirements:
+            Primary Data Field: Version (used for categories/slices).
+            Numerical Data Fields: 2015 (Primary value) and 2016 (Secondary value for comparison/context).
+            The chart should visually show the market share distribution. Although the original data has 4 rows, the visual representation should be condensed or focused on the most significant 2 data points/versions (as suggested by the "数据量: 2条" field, implying a focus on the top 2 shares or a simplified view).
+            Ensure the design is professional, clean, and modern. Include a legend or labels for the "Version" categories and clearly indicate the percentages for both 2015 and 2016 within the pie chart or accompanying text/tables. The total data volume is based on 4 original rows, but the presentation should be simplified, perhaps showing the two largest segments and "Others." The final infographic should be compelling and easy to read.
+            Keywords: data visualization, technology, software market, operating system, corporate blue palette, modern design.
+
+            #请直接返回提示词内容，不要其他解释。
             """
             
             response = self._call_llm_api(prompt_for_llm)
@@ -138,23 +156,29 @@ Generate a clean, professional, and visually appealing infographic.
     def _generate_rule_based_prompt(self, 
                                    data_sample: Dict[str, Any], 
                                    chart_type: str, 
-                                   layout_template_id: str) -> str:
+                                   layout_template_id: str,
+                                   layout_template_name: str,
+                                   chart_description: str,
+                                   layout_description: str) -> str:
         """基于规则生成提示词"""
-        # 提取数据样本信息
-        topic = data_sample.get('topic', 'Data Analysis')
-        data = data_sample.get('data', [])
-        elements = data_sample.get('elements', {})
-        text_description = elements.get('text', 'Data visualization showing key insights.')
-        icon_keywords = elements.get('icon_keywords', ['data', 'chart'])
+        # 从新的数据结构中提取信息
+        metadata = data_sample.get('metadata', {})
+        topic = metadata.get('title', 'Data Analysis')
+        text_description = metadata.get('main_insight', 'Data visualization showing key insights.')
+        
+        # 从data部分获取实际数据
+        data_info = data_sample.get('data', {})
+        actual_data = data_info.get('data', [])
         
         # 序列化数据
-        data_string = self.serialize_data(data)
+        data_string = self.serialize_data(actual_data)
         
-        # 获取布局描述
-        layout_description = self.layout_descriptions.get(
-            layout_template_id, 
-            "Standard layout with title at top and chart in center."
-        )
+        # 生成图标关键词（基于数据主题）
+        icon_keywords = ['data', 'chart', 'analysis']
+        if 'windows' in topic.lower():
+            icon_keywords.extend(['windows', 'computer', 'system'])
+        elif 'market' in topic.lower():
+            icon_keywords.extend(['market', 'business', 'share'])
         
         # 格式化图标关键词
         formatted_keywords = self.format_icon_keywords(icon_keywords)
@@ -174,37 +198,69 @@ Generate a clean, professional, and visually appealing infographic.
     def _generate_fallback_prompt(self, 
                                  data_sample: Dict[str, Any], 
                                  chart_type: str, 
-                                 layout_template_id: str) -> str:
+                                 layout_template_id: str,
+                                 layout_template_name: str,
+                                 chart_description: str,
+                                 layout_description: str) -> str:
         """生成备用提示词"""
-        return f"Generate a {chart_type} chart for {data_sample.get('topic', 'data analysis')} using {layout_template_id} layout."
+        metadata = data_sample.get('metadata', {})
+        topic = metadata.get('title', 'data analysis')
+        return f"Generate a {chart_type} chart for {topic} using {layout_template_id} ({layout_template_name}) layout. {chart_description}"
     
     def _build_llm_context(self, 
                           data_sample: Dict[str, Any], 
                           chart_type: str, 
-                          layout_template_id: str) -> str:
+                          layout_template_id: str,
+                          layout_template_name: str,
+                          chart_description: str,
+                          layout_description: str) -> str:
         """构建LLM上下文"""
         context_parts = []
         
-        # 数据信息
-        context_parts.append(f"主题: {data_sample.get('topic', '数据分析')}")
-        context_parts.append(f"用户需求: {data_sample.get('query', '')}")
+        # 从metadata获取数据信息
+        metadata = data_sample.get('metadata', {})
+        context_parts.append(f"数据主题: {metadata.get('title', '数据分析')}")
+        context_parts.append(f"数据描述: {metadata.get('description', '')}")
+        context_parts.append(f"主要洞察: {metadata.get('main_insight', '')}")
         
-        # 数据特征
-        data = data_sample.get('data', [])
-        if data:
-            context_parts.append(f"数据量: {len(data)}条")
-            if data:
-                columns = list(data[0].keys())
-                context_parts.append(f"数据字段: {', '.join(columns)}")
+        # 从data部分获取数据特征
+        data_info = data_sample.get('data', {})
+        columns_info = data_info.get('columns', [])
+        actual_data = data_info.get('data', [])
+        
+        if actual_data:
+            context_parts.append(f"数据量: {len(actual_data)}条")
+        
+        if columns_info:
+            # 提取列名和重要性信息
+            primary_columns = [col['name'] for col in columns_info if col.get('importance') == 'primary']
+            secondary_columns = [col['name'] for col in columns_info if col.get('importance') == 'secondary']
+            
+            if primary_columns:
+                context_parts.append(f"主要字段: {', '.join(primary_columns)}")
+            if secondary_columns:
+                context_parts.append(f"次要字段: {', '.join(secondary_columns)}")
+            
+            # 数据类型信息
+            categorical_cols = [col['name'] for col in columns_info if col.get('data_type') == 'categorical']
+            numerical_cols = [col['name'] for col in columns_info if col.get('data_type') == 'numerical']
+            
+            if categorical_cols:
+                context_parts.append(f"分类字段: {', '.join(categorical_cols)}")
+            if numerical_cols:
+                context_parts.append(f"数值字段: {', '.join(numerical_cols)}")
         
         # 设计要求
         context_parts.append(f"图表类型: {chart_type}")
-        context_parts.append(f"布局模板: {layout_template_id}")
+        context_parts.append(f"图表描述: {chart_description}")
+        context_parts.append(f"布局模板: {layout_template_id} ({layout_template_name})")
+        context_parts.append(f"布局描述: {layout_description}")
         
-        # 补充元素
-        elements = data_sample.get('elements', {})
-        if elements.get('text'):
-            context_parts.append(f"关键洞察: {elements['text']}")
+        # 处理信息
+        processing_info = metadata.get('processing_info', {})
+        if processing_info:
+            context_parts.append(f"样本ID: {processing_info.get('sample_id', '')}")
+            context_parts.append(f"原始数据行数: {processing_info.get('original_rows', '')}")
         
         return "\n".join(context_parts)
     
@@ -242,7 +298,7 @@ Generate a clean, professional, and visually appealing infographic.
             response = client.chat.completions.create(
                 model=self.llm_config.get('model', 'gpt-3.5-turbo'),
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=500,
+                max_tokens=1000,
                 temperature=0.7
             )
             
@@ -303,13 +359,37 @@ Generate a clean, professional, and visually appealing infographic.
         ]
         
         return {
-            "sample_id": f"DS-{sample_num:02d}",
-            "topic": f"季度业绩分析 - 样本{sample_num}",
-            "query": "创建一个展示季度数据的信息图",
-            "data": default_data,
-            "elements": {
-                "text": f"数据显示第四季度表现最佳，实现了{sample_num * 5}%的增长。",
-                "icon_keywords": ["business", "growth", "chart", "analysis"]
+            "metadata": {
+                "title": f"季度业绩分析 - 样本{sample_num}",
+                "description": "展示季度数据变化趋势的分析图表",
+                "main_insight": f"数据显示第四季度表现最佳，实现了{sample_num * 5}%的增长。",
+                "processing_info": {
+                    "sample_id": f"{sample_num}",
+                    "processing_timestamp": "2024-01-01T00:00:00.000000",
+                    "original_rows": 4,
+                    "processing_method": "default_generation"
+                }
+            },
+            "data": {
+                "columns": [
+                    {
+                        "name": "category",
+                        "importance": "primary",
+                        "description": "季度分类",
+                        "unit": "none",
+                        "data_type": "categorical",
+                        "role": "x"
+                    },
+                    {
+                        "name": "value",
+                        "importance": "primary",
+                        "description": "业绩数值",
+                        "unit": "none",
+                        "data_type": "numerical",
+                        "role": "y"
+                    }
+                ],
+                "data": default_data
             }
         }
     
@@ -332,7 +412,9 @@ Generate a clean, professional, and visually appealing infographic.
             data_sample_id = row['Data Sample ID']
             chart_type = row['Chart Type']
             layout_template_id = row['Layout Template ID']
-            
+            layout_template_name = row['Layout Name']
+            chart_description = row['Chart Description']
+            layout_description = row['Layout Description']
             # 获取对应的数据样本
             data_sample = data_samples.get(data_sample_id, self._create_default_sample(1))
             
@@ -340,7 +422,10 @@ Generate a clean, professional, and visually appealing infographic.
             prompt = self.generate_single_prompt(
                 data_sample=data_sample,
                 chart_type=chart_type,
-                layout_template_id=layout_template_id
+                layout_template_id=layout_template_id,
+                layout_template_name=layout_template_name,
+                chart_description=chart_description,
+                layout_description=layout_description
             )
             
             # 记录提示词信息
@@ -350,6 +435,7 @@ Generate a clean, professional, and visually appealing infographic.
                 "chart_type": chart_type,
                 "layout_template_id": layout_template_id,
                 "prompt": prompt,
+                "data": data_sample,
                 "metadata": {
                     "topic": data_sample.get('topic', ''),
                     "data_points": len(data_sample.get('data', [])),
@@ -364,7 +450,7 @@ Generate a clean, professional, and visually appealing infographic.
     def save_prompts(self, 
                     prompts: List[Dict[str, Any]], 
                     output_file: str = "prompts.txt",
-                    json_output: str = "prompts_detailed.json") -> tuple:
+                    json_output: str = "all_prompts.json") -> tuple:
         """保存提示词到文件"""
         
         # 保存简单文本格式（每行一个提示词）

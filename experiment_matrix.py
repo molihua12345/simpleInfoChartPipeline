@@ -6,8 +6,8 @@
 基于ChartGalaxy分类体系，生成3×3×3的全因子实验设计矩阵。
 包含3个数据样本、3种图表类型、3种布局模板的所有组合。
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import pandas as pd

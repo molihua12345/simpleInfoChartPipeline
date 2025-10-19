@@ -6,8 +6,8 @@
 基于ChartGalaxy评估维度，实现多维度量化评估框架。
 包含数据一致性、布局准确性和美观度三个核心评估维度。
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import json

@@ -6,8 +6,8 @@
 基于MatPlotBench数据集，实现从原始数据到结构化JSON的转换流程。
 按照ChartGalaxy方法论进行数据抽样、主题提取和补充元素生成。
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import os
@@ -44,7 +44,7 @@ class DataPreprocessor:
             self.instructions = json.load(f)
     
     def load_sample_data(self, sample_id: str) -> Tuple[pd.DataFrame, str]:
-        """加载指定样本的数据和查询指令"""
+        """加载指定样本的数据和查询指令，如果CSV超过10行则截断"""
         sample_dir = self.data_path / sample_id
         
         # 查找数据文件
@@ -61,6 +61,10 @@ class DataPreprocessor:
         # 加载数据
         if data_file.suffix == '.csv':
             data = pd.read_csv(data_file)
+            # 如果数据行超过10行，截断保留表头和前10行
+            if len(data) > 10:
+                data = data.head(10)
+                print(f"CSV数据超过10行，已截断为前10行数据 (样本: {sample_id})")
         elif data_file.suffix == '.json':
             with open(data_file, 'r', encoding='utf-8') as f:
                 json_data = json.load(f)
@@ -68,6 +72,10 @@ class DataPreprocessor:
             data = self._extract_data_from_json(json_data)
         else:
             data = pd.read_csv(data_file, sep='\t')
+            # 对TSV文件也应用同样的截断逻辑
+            if len(data) > 10:
+                data = data.head(10)
+                print(f"TSV数据超过10行，已截断为前10行数据 (样本: {sample_id})")
         
         # 获取对应的查询指令
         instruction = self._get_instruction_by_id(int(sample_id))
@@ -100,6 +108,145 @@ class DataPreprocessor:
                 return instruction.get('simple_instruction', '')
         return "Generate a data visualization chart."
     
+    def convert_dataframe_to_json(self, data: pd.DataFrame, instruction: str) -> Dict[str, Any]:
+        """将DataFrame转换为符合task2.md规范的JSON格式"""
+        # 生成列定义
+        columns_def = []
+        data_records = []
+        
+        # 分析每一列的特征
+        for i, col_name in enumerate(data.columns):
+            col_data = data[col_name]
+            
+            # 判断数据类型
+            if pd.api.types.is_numeric_dtype(col_data):
+                data_type = "numerical"
+                unit = "none"
+            elif pd.api.types.is_datetime64_any_dtype(col_data):
+                data_type = "temporal"
+                unit = "none"
+            else:
+                data_type = "categorical"
+                unit = "none"
+            
+            # 判断重要性（第一列通常是primary，其他为secondary）
+            importance = "primary" if i < 2 else "secondary"
+            
+            # 判断在可视化中的角色
+            if i == 0:
+                role = "x"
+            elif data_type == "numerical":
+                role = "y"
+            else:
+                role = "group"
+            
+            columns_def.append({
+                "name": col_name,
+                "importance": importance,
+                "description": f"Data column representing {col_name.lower()}",
+                "unit": unit,
+                "data_type": data_type,
+                "role": role
+            })
+        
+        # 转换数据记录
+        for _, row in data.iterrows():
+            record = {}
+            for col_name in data.columns:
+                value = row[col_name]
+                # 处理NaN值
+                if pd.isna(value):
+                    record[col_name] = None
+                else:
+                    record[col_name] = value
+            data_records.append(record)
+        
+        # 构建完整的JSON结构
+        result = {
+            "metadata": {
+                "title": "Data Visualization Chart",
+                "description": f"Data visualization based on the instruction: {instruction[:100]}...",
+                "main_insight": "This chart shows the relationship between different data points."
+            },
+            "data": {
+                "columns": columns_def,
+                "data": data_records
+            }
+        }
+        
+        return result
+    
+    def generate_ai_metadata(self, data: pd.DataFrame, instruction: str) -> Dict[str, str]:
+        """使用AI生成更好的metadata信息"""
+        # 创建数据摘要
+        data_summary = self._create_dataframe_summary(data)
+        
+        prompt = f"""
+你是一个数据分析专家。请根据以下数据和指令，生成合适的图表元数据。
+
+数据摘要：
+{data_summary}
+
+用户指令：
+{instruction}
+
+请生成以下三个字段的内容（用JSON格式返回）：
+1. title: 简洁有力的图表标题（不超过50字符）
+2. description: 对数据内容的简要描述（不超过100字符）
+3. main_insight: 数据揭示的主要洞察或趋势（不超过150字符）
+
+返回格式：
+{{
+  "title": "图表标题",
+  "description": "数据描述",
+  "main_insight": "主要洞察"
+}}
+"""
+        
+        try:
+            ai_response = self._call_llm_api(prompt)
+            if ai_response:
+                # 尝试解析AI返回的JSON
+                import re
+                json_match = re.search(r'\{[^}]+\}', ai_response, re.DOTALL)
+                if json_match:
+                    metadata = json.loads(json_match.group())
+                    return {
+                        "title": metadata.get("title", "Data Visualization Chart"),
+                        "description": metadata.get("description", f"Visualization based on: {instruction[:80]}..."),
+                        "main_insight": metadata.get("main_insight", "This chart reveals patterns in the data.")
+                    }
+                else:
+                    print("AI返回的JSON格式错误")
+            else:
+                print("AI返回空响应")
+        except Exception as e:
+            print(f"AI metadata generation failed: {e}")
+        
+        # 回退到基础metadata
+        return {
+            "title": "Data Visualization Chart",
+            "description": f"Visualization based on: {instruction[:80]}...",
+            "main_insight": "This chart reveals patterns in the data."
+        }
+    
+    def _create_dataframe_summary(self, data: pd.DataFrame) -> str:
+        """创建DataFrame的摘要信息"""
+        summary_parts = []
+        summary_parts.append(f"数据行数: {len(data)}")
+        summary_parts.append(f"数据列数: {len(data.columns)}")
+        summary_parts.append(f"列名: {', '.join(data.columns.tolist())}")
+        
+        # 添加每列的基本统计信息
+        for col in data.columns:
+            if pd.api.types.is_numeric_dtype(data[col]):
+                summary_parts.append(f"{col}: 数值型，范围 {data[col].min():.2f} - {data[col].max():.2f}")
+            else:
+                unique_count = data[col].nunique()
+                summary_parts.append(f"{col}: 分类型，{unique_count}个不同值")
+        
+        return "\n".join(summary_parts)
+     
     def simplify_data(self, data: pd.DataFrame, max_points: int = 6) -> List[Dict[str, Any]]:
         """简化数据，确保数据点在3-6个之间"""
         # 如果数据太多，进行抽样或聚合
@@ -651,50 +798,76 @@ class DataPreprocessor:
         return "; ".join(summary_parts)
     
     def process_sample(self, sample_id: str) -> Dict[str, Any]:
-        """智能处理单个样本，生成完整的JSON结构"""
+        """处理单个样本，生成符合规范的JSON结构"""
         try:
-            # 加载原始数据
+            # 加载原始数据（已包含截断逻辑）
             raw_data, instruction = self.load_sample_data(sample_id)
             
-            # 智能简化数据
-            simplified_data = self.simplify_data(raw_data)
+            # 将DataFrame转换为基础JSON格式
+            json_data = self.convert_dataframe_to_json(raw_data, instruction)
             
-            # 数据质量检查
-            quality_check = self._perform_data_quality_check(simplified_data)
-            if not quality_check['is_valid']:
-                print(f"数据质量警告 {sample_id}: {quality_check['issues']}")
-                simplified_data = self._fix_data_quality_issues(simplified_data, quality_check)
+            # 使用AI生成更好的metadata
+            ai_metadata = self.generate_ai_metadata(raw_data, instruction)
             
-            # 智能提取主题
-            topic = self.extract_topic(instruction, simplified_data)
+            # 更新metadata
+            json_data["metadata"].update(ai_metadata)
             
-            # 确定最佳图表类型
-            chart_type = self.determine_chart_type(simplified_data, instruction)
-            
-            # 生成智能补充元素
-            elements = self.generate_supplementary_elements(topic, simplified_data)
-            
-            # 构建增强的JSON结构
-            result = {
-                "sample_id": f"MPB_case_{sample_id}_v2",
-                "topic": topic,
-                "query": instruction,
-                "data": simplified_data,
-                "chart_type": chart_type,
-                "elements": elements,
-                "metadata": {
-                    "processing_timestamp": datetime.now().isoformat(),
-                    "data_quality_score": quality_check.get('quality_score', 0.8),
-                    "processing_method": "intelligent_pipeline"
-                }
+            # 添加处理信息
+            json_data["metadata"]["processing_info"] = {
+                "sample_id": sample_id,
+                "processing_timestamp": datetime.now().isoformat(),
+                "original_rows": len(raw_data),
+                "processing_method": "data_process_pipeline"
             }
             
-            return result
+            return json_data
             
         except Exception as e:
             print(f"Error processing sample {sample_id}: {str(e)}")
-            # 返回增强的默认样本
-            return self._create_enhanced_default_sample(sample_id, str(e))
+            # 返回基础的默认样本
+            return self._create_task2_default_sample(sample_id, str(e))
+    
+    def _create_task2_default_sample(self, sample_id: str, error_msg: str) -> Dict[str, Any]:
+        """创建符合规范的默认样本"""
+        return {
+            "metadata": {
+                "title": "Default Data Chart",
+                "description": f"Default sample data for sample {sample_id}",
+                "main_insight": "This is a default dataset created due to processing error.",
+                "processing_info": {
+                    "sample_id": sample_id,
+                    "processing_timestamp": datetime.now().isoformat(),
+                    "original_rows": 0,
+                    "processing_method": "task2_pipeline",
+                    "error": error_msg
+                }
+            },
+            "data": {
+                "columns": [
+                    {
+                        "name": "Category",
+                        "importance": "primary",
+                        "description": "Default category column",
+                        "unit": "none",
+                        "data_type": "categorical",
+                        "role": "x"
+                    },
+                    {
+                        "name": "Value",
+                        "importance": "primary",
+                        "description": "Default value column",
+                        "unit": "none",
+                        "data_type": "numerical",
+                        "role": "y"
+                    }
+                ],
+                "data": [
+                    {"Category": "A", "Value": 10},
+                    {"Category": "B", "Value": 20},
+                    {"Category": "C", "Value": 15}
+                ]
+            }
+        }
     
     def _perform_data_quality_check(self, data: List[Dict]) -> Dict[str, Any]:
         """执行数据质量检查"""
@@ -977,10 +1150,10 @@ class DataPreprocessor:
             response = client.chat.completions.create(
                 model=self.llm_config.get('model', 'gpt-3.5-turbo'),
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=50,
+                max_tokens=1000,
                 temperature=0.3
             )
-            
+            print(response.choices[0].message.content.strip())
             return response.choices[0].message.content.strip()
         except Exception as e:
             print(f"OpenAI API调用失败: {e}")
@@ -1000,7 +1173,7 @@ class DataPreprocessor:
             
             response = client.messages.create(
                 model=self.llm_config.get('model', 'claude-3-haiku-20240307'),
-                max_tokens=50,
+                max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
             

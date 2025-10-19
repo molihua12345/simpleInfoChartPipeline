@@ -6,8 +6,8 @@ AI驱动评估模块
 使用多模态AI模型（如GPT-4V、Claude Vision等）自动评估生成的信息图质量。
 基于ChartGalaxy评估维度进行量化评分和详细反馈生成。
 
-作者: ChartGalaxy Pipeline
-日期: 2024
+作者: lxd
+日期: 2025
 """
 
 import os
