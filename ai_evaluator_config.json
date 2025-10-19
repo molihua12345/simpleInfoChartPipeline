@@ -1,6 +1,6 @@
 {
   "evaluator_type": "gpt4v",
-  "api_key": "sk-HGwzhul85auxqDzz6eF39b9eD47347F7A454Ad9e8f1f380d",
+  "api_key": "sk-xxx",
   "model": "o4-mini",
   "max_tokens": 3000,
   "temperature": 0.1,
