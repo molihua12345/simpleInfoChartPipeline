@@ -14,29 +14,6 @@
 - **评估框架**: 多维度量化评估标准，包含数据一致性、布局准确性和美观度
 - **自动化流程**: 一键运行完整实验流程
 
-## 项目结构
-
-```
-simplePipeline/
-├── benchmark_data/                    # MatPlotBench数据集
-│   ├── benchmark_instructions.json
-│   ├── data/                         # 数据文件目录
-│   └── ground_truth/                 # 参考图像目录
-├── data_preprocessor.py              # 数据预处理模块
-├── experiment_matrix.py              # 实验矩阵生成模块
-├── prompt_generator.py               # 提示词生成模块
-├── evaluation_framework.py           # 评估框架模块
-├── ai_image_generator.py             # AI图像生成模块
-├── ai_evaluator.py                   # AI自动评估模块
-├── run_experiment.py                 # 主实验运行脚本
-├── ai_image_generator_config.json    # AI图像生成配置
-├── ai_evaluator_config.json          # AI评估配置
-├── requirements.txt                  # 依赖包列表
-├── README.md                        # 项目说明文档
-├── task.txt                         # 任务描述
-└── 数据驱动信息图生成实验计划.md      # 实验计划文档
-```
-
 ## 环境要求
 
 - Python 3.8+
@@ -195,7 +172,6 @@ runner.step4_setup_evaluation()    # 设置评估框架
 #### 自动评估
 - **GPT-4V**: OpenAI的视觉理解模型
 - **Claude Vision**: Anthropic的多模态模型
-- **Gemini Vision**: Google的视觉AI（待实现）
 
 ## 输出文件
 
@@ -209,25 +185,17 @@ runner.step4_setup_evaluation()    # 设置评估框架
 
 ### 提示词生成
 - `prompts/all_prompts.json`: 所有实验条件的提示词
-- `prompts/generation_summary.txt`: 提示词生成摘要
-
-### 评估框架
-- `evaluations/evaluation_batch.json`: 批量评估模板
-- `evaluations/evaluation_guide.md`: 详细评估指南
+- `prompts/prompts.txt`: 提示词生成摘要
 
 ### AI生成结果
 - `generated_images/`: AI生成的信息图图像
-- `generation_results.json`: 图像生成统计和结果
 - `generation_report.json`: 详细生成报告
 
 ### AI评估结果
 - `evaluations/ai_evaluation_results.json`: AI自动评估详细结果
-- `evaluations/ai_evaluation_results.csv`: 评估结果CSV格式
-- `ai_evaluation_report.json`: 批量评估统计报告
 
 ### 报告
-- `reports/[experiment_id]_report.md`: 实验执行报告
-- `reports/comprehensive_experiment_report.md`: 综合实验报告
+- `reports/chartgalaxy_e2e_automation_exp_comprehensive_report.md`: 实验执行报告
 
 ## 实验流程
 
@@ -320,146 +288,5 @@ LAYOUT_TEMPLATES = [
 ]
 ```
 
-### 自定义AI服务配置
-
-#### LLM智能化配置
-编辑 `llm_config.json`：
-```json
-{
-  "api_type": "openai",
-  "api_key": "your-api-key-here",
-  "model": "gpt-4",
-  "base_url": "https://api.openai.com/v1",
-  "timeout": 60,
-  "max_retries": 5,
-  "enable_intelligent_processing": true,
-  "fallback_mode": true,
-  "data_quality_threshold": 0.8,
-  "max_samples_per_batch": 5
-}
-```
-
-#### 图像生成配置
-编辑 `ai_image_generator_config.json`：
-```json
-{
-  "generator_type": "stable_diffusion",
-  "model": "stable-diffusion-xl-base-1.0",
-  "image_size": "1024x1024",
-  "batch_delay": 3,
-  "retry_attempts": 5
-}
-```
-
-#### 评估配置
-编辑 `ai_evaluator_config.json`：
-```json
-{
-  "evaluator_type": "claude_vision",
-  "model": "claude-3-opus-20240229",
-  "temperature": 0.0,
-  "max_tokens": 2000
-}
-```
-
 ### 修改评估标准
-在 `evaluation_framework.py` 中的 `_define_evaluation_criteria` 方法中修改评估标准。
-
-## 故障排除
-
-### 常见问题
-
-1. **找不到数据目录**
-   - 确保 `benchmark_data` 目录存在且包含完整数据
-   - 检查数据文件路径和权限
-
-2. **依赖包安装失败**
-   - 升级pip: `pip install --upgrade pip`
-   - 使用国内镜像: `pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt`
-
-3. **LLM API配置问题**
-   - 确认LLM API密钥正确设置
-   - 检查API配额和网络连接
-   - 验证模型可用性和参数配置
-   - 系统会自动回退到规则模式
-
-4. **AI API配置问题**
-   - 确认图像生成/评估API密钥正确设置
-   - 检查API配额和限制
-   - 验证网络连接和API端点可访问性
-
-5. **图像生成失败**
-   - 检查提示词长度是否超出限制
-   - 确认图像尺寸设置合理
-   - 查看API错误日志
-
-6. **评估失败**
-   - 确认生成的图像文件存在
-   - 检查图像格式是否支持
-   - 验证评估模型配置
-
-6. **内存不足**
-   - 减少处理的数据样本数量
-   - 在 `run_experiment.py` 中修改 `selected_samples = data_samples[:3]` 为更小的数字
-
-7. **编码问题**
-   - 确保所有文本文件使用UTF-8编码
-   - 在Windows系统上可能需要设置环境变量 `PYTHONIOENCODING=utf-8`
-
-### 调试模式
-
-在 `run_experiment.py` 中启用详细日志：
-
-```python
-# 在ExperimentRunner类中添加调试模式
-def __init__(self, debug=True):
-    self.debug = debug
-    # ...
-```
-
-### API配置验证
-```python
-# 测试LLM API
-python -c "from data_preprocessor import DataPreprocessor; dp = DataPreprocessor({'llm_config': {'api_key': 'test'}}); print('LLM配置加载成功')"
-
-# 测试图像生成API
-python -c "from ai_image_generator import create_generator_from_config; g = create_generator_from_config(); print('图像生成API配置正常' if g.config.api_key != 'your-api-key-here' else '请配置API密钥')"
-
-# 测试评估API
-python -c "from ai_evaluator import create_evaluator_from_config; e = create_evaluator_from_config(); print('评估API配置正常' if e.config.api_key != 'your-api-key-here' else '请配置API密钥')"
-```
-
-## 贡献指南
-
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
-## 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
-## 引用
-
-如果您在研究中使用了本项目，请引用：
-
-```bibtex
-@misc{chartgalaxy2024,
-  title={ChartGalaxy: 数据驱动信息图生成实验框架},
-  author={ChartGalaxy Team},
-  year={2024},
-  url={https://github.com/your-repo/chartgalaxy-pipeline}
-}
-```
-
-## 联系方式
-
-- 项目主页: [GitHub Repository](https://github.com/your-repo/chartgalaxy-pipeline)
-- 问题反馈: [Issues](https://github.com/your-repo/chartgalaxy-pipeline/issues)
-- 邮箱: your-email@example.com
-
----
-
-**注意**: 本项目仅用于学术研究目的，生成的提示词和评估结果仅供参考。在实际应用中，请根据具体需求调整实验参数和评估标准。
+在 `evaluation_framework.py` 中的 `_define_evaluation_criteria` 方法中修改评估标准

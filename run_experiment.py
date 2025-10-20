@@ -329,7 +329,7 @@ class ExperimentRunner:
                     'experiment_id': exp['Run ID'],
                     'data_info': f"数据样本ID: {exp['Data Sample ID']}",
                     'chart_type': exp['Chart Type'],
-                    'layout_template': exp['Layout Template ID']
+                    'layout_template': exp['Layout Name']
                 })
             
             # 批量评估图像
